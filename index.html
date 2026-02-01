@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Between the Paradoxes. The World of Data</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap');
+        
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            overflow: hidden; background: #000; 
+            font-family: 'Share Tech Mono', monospace;
+            user-select: none;
+            touch-action: none;
+        }
+
+        #game-canvas { width: 100%; height: 100%; display: block; }
+
+        .crt-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            background-size: 100% 3px, 5px 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .scanline {
+            width: 100%; height: 100px; z-index: 1001; position: absolute;
+            background: linear-gradient(0deg, transparent 0%, rgba(0, 255, 0, 0.05) 50%, transparent 100%);
+            animation: scan 8s linear infinite;
+        }
+        @keyframes scan { from { top: -100px; } to { top: 100%; } }
+
+        .hud-vitals {
+            position: absolute; top: 20px; left: 160px;
+            color: #00ff00; text-shadow: 0 0 5px #00ff00;
+        }
+
+        .joystick-container {
+            position: absolute; bottom: 40px; left: 40px;
+            width: 120px; height: 120px;
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid rgba(0, 255, 0, 0.4);
+            border-radius: 50%;
+            z-index: 2000;
+        }
+        .joystick-knob {
+            position: absolute; top: 50%; left: 50%;
+            width: 45px; height: 45px;
+            background: #00ff00;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.6);
+        }
+
+        .menu-btn {
+            background: rgba(0, 20, 0, 0.9);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            text-transform: uppercase;
+            padding: 12px 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .menu-btn:hover:not(:disabled) {
+            background: #00ff00; color: #000;
+            box-shadow: 0 0 20px #00ff00;
+        }
+
+        #extraction-ui {
+            position: fixed; inset: 0; background: rgba(0,5,0,0.95);
+            z-index: 5000; display: none; align-items: center; justify-content: center;
+        }
+        .extraction-frame {
+            width: 400px; border: 2px solid #00ff00; background: #000;
+            padding: 25px; box-shadow: 0 0 30px rgba(0,255,0,0.2);
+        }
+
+        #admin-auth, #admin-panel, #settings-menu {
+            display: none; position: fixed; inset: 0; z-index: 6000;
+            background: #000; flex-direction: column; padding: 40px;
+            overflow-y: auto;
+        }
+        
+        #admin-auth { align-items: center; justify-content: center; }
+
+        .admin-field, .settings-input {
+            background: #110000; border: 1px solid #ff0000; color: #ff0000;
+            padding: 12px; font-family: 'Share Tech Mono'; outline: none;
+        }
+        .settings-input { border-color: #00ff00; color: #00ff00; }
+
+        #radar-ring {
+            position: fixed; top: 20px; right: 20px;
+            width: 100px; height: 100px;
+            border: 1px solid #00ff00; border-radius: 50%;
+            background: rgba(0,40,0,0.2);
+        }
+        #radar-sweep {
+            position: absolute; top: 50%; left: 50%; width: 50%; height: 2px;
+            background: linear-gradient(90deg, #00ff00, transparent);
+            transform-origin: left center; animation: sweep 2s linear infinite;
+        }
+        @keyframes sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        #minimap-container {
+            position: fixed; top: 20px; left: 20px;
+            width: 120px; height: 120px;
+            border: 2px solid #00ff00;
+            background: rgba(0, 10, 0, 0.8);
+            overflow: hidden;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+            z-index: 45;
+        }
+        #minimap-canvas { width: 100%; height: 100%; }
+
+        #portal-hud {
+            position: fixed; pointer-events: none; z-index: 100;
+            color: #00ffff; text-shadow: 0 0 10px #00ffff;
+            text-align: center; font-weight: bold; font-size: 14px;
+            display: none;
+        }
+
+        #lore-toast {
+            position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 20, 0, 0.9); border: 1px solid #00ff00;
+            color: #00ff00; padding: 15px 30px; width: 80%; max-width: 500px;
+            text-align: center; z-index: 4000; display: none;
+            animation: fadeIn 0.5s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; bottom: 100px; } to { opacity: 1; bottom: 120px; } }
+
+        #monster-dir-hud {
+            position: fixed; top: 50%; left: 50%; width: 200px; height: 200px;
+            transform: translate(-50%, -50%); pointer-events: none;
+            border: 2px solid transparent; border-radius: 50%; z-index: 500;
+        }
+        #monster-pointer {
+            position: absolute; top: -20px; left: 50%; width: 0; height: 0;
+            border-left: 10px solid transparent; border-right: 10px solid transparent;
+            border-bottom: 20px solid #ff0000; transform: translateX(-50%);
+            opacity: 0; transition: opacity 0.3s;
+        }
+
+        .mini-btn {
+            border: 1px solid #00ff00;
+            background: #001100;
+            color: #00ff00;
+            transition: all 0.2s;
+        }
+        .mini-btn:active { background: #00ff00; color: #000; }
+
+        .custom-scroll::-webkit-scrollbar { width: 5px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #00ff00; }
+    </style>
+</head>
+<body>
+
+<div class="crt-overlay"></div>
+<div class="scanline"></div>
+
+<div id="portal-hud">
+    <div>[ EXTRACTION PORTAL ]</div>
+    <div id="portal-dist">0m</div>
+</div>
+
+<div id="lore-toast"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden pointer-events-none z-40 fixed inset-0">
+    <div id="minimap-container">
+        <canvas id="minimap-canvas"></canvas>
+    </div>
+
+    <div class="hud-vitals">
+        <div class="text-2xl font-bold italic">NEURAL_LINK: ACTIVE</div>
+        <div id="level-label" class="text-xs opacity-70">CELL_01 // VOID</div>
+        <div id="timer-display" class="mt-4 text-xl">00:00:00</div>
+        <div id="orb-tally" class="text-sm mt-1">NODES: 0 / 10</div>
+        <div id="objective-text" class="text-[10px] text-yellow-500 mt-2 uppercase">Locate All Data Nodes</div>
+    </div>
+
+    <div id="monster-dir-hud">
+        <div id="monster-pointer"></div>
+    </div>
+
+    <div id="radar-ring">
+        <div id="radar-sweep"></div>
+        <div id="radar-blip" class="absolute w-2 h-2 bg-red-600 rounded-full hidden shadow-[0_0_10px_red]"></div>
+    </div>
+
+    <div class="absolute bottom-10 right-10 text-right">
+        <div class="text-[10px] opacity-50 uppercase">Credits</div>
+        <div id="hud-credits" class="text-2xl text-green-400">000000</div>
+    </div>
+
+    <div class="absolute bottom-10 left-1/2 -translate-x-1/2 w-64 text-center">
+        <div class="text-[9px] uppercase tracking-widest mb-1 text-green-500">Neural Integrity</div>
+        <div class="h-1 bg-green-950 border border-green-800">
+            <div id="integrity-fill" class="h-full bg-green-400 transition-all" style="width: 100%"></div>
+        </div>
+    </div>
+</div>
+
+<!-- MAIN MENU -->
+<div id="main-menu" class="fixed inset-0 z-[1000] flex flex-col items-center justify-center bg-black">
+    <div class="text-center mb-16">
+        <h1 class="text-7xl font-bold text-green-500 italic tracking-tighter opacity-80">REALISATION 0</h1>
+        <p class="text-green-800 text-xs tracking-[0.5em] mt-2 uppercase">Legacy Matrix V4.2</p>
+    </div>
+    
+    <div id="menu-stats" class="mb-10 text-green-600 text-sm border-y border-green-900/50 py-2 px-10">
+        UNITS: 0 | PROGRESS: 1/40
+    </div>
+
+    <div class="flex flex-col gap-4 w-72">
+        <button onclick="showScreen('map-menu')" class="menu-btn font-bold">START EXTRACTION</button>
+        <button onclick="showScreen('shop-menu')" class="menu-btn text-xs">BIO-UPGRADES</button>
+        <button onclick="showScreen('settings-menu')" class="menu-btn text-xs">SETTINGS</button>
+        <button onclick="openAdminAuth()" class="menu-btn text-[9px] border-zinc-800 text-zinc-600">SYS_OVERRIDE</button>
+    </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="settings-menu" class="bg-black/95">
+    <h2 class="text-3xl text-green-400 mb-8 italic">SYSTEM_CONFIG</h2>
+    <div id="settings-list" class="grid grid-cols-1 md:grid-cols-2 gap-6 custom-scroll overflow-y-auto mb-10"></div>
+    <button onclick="showScreen('main-menu')" class="menu-btn w-full">APPLY & RETURN</button>
+</div>
+
+<!-- MAP MENU -->
+<div id="map-menu" class="fixed inset-0 z-[1100] hidden bg-black p-10 flex flex-col">
+    <div class="flex justify-between items-center mb-10 border-b border-green-900 pb-4">
+        <div>
+            <h2 class="text-2xl text-green-400 italic">MAP_COORDINATES</h2>
+            <div id="unlocked-text" class="text-[10px] text-green-700">ACCESSIBLE: 1 / 40</div>
+        </div>
+        <button onclick="showScreen('main-menu')" class="text-xs text-green-600 hover:text-white">RETURN</button>
+    </div>
+    <div id="map-grid" class="grid grid-cols-4 md:grid-cols-8 gap-3 overflow-y-auto pr-4 custom-scroll"></div>
+</div>
+
+<!-- SHOP -->
+<div id="shop-menu" class="fixed inset-0 z-[1200] hidden bg-black/95 flex items-center justify-center">
+    <div class="w-full max-w-2xl border border-green-800 p-8">
+        <div class="flex justify-between items-center mb-8">
+            <h3 class="text-xl text-green-400">NEURAL_MODS</h3>
+            <div id="shop-balance" class="text-green-500 font-mono">0 CR</div>
+        </div>
+        <div id="shop-items" class="space-y-4 max-h-[50vh] overflow-y-auto pr-2 custom-scroll"></div>
+        <button onclick="showScreen('main-menu')" class="menu-btn w-full mt-8">EXIT BIOS</button>
+    </div>
+</div>
+
+<!-- EXTRACTION UI -->
+<div id="extraction-ui">
+    <div class="extraction-frame">
+        <div id="mini-title" class="text-[10px] text-green-500 font-bold mb-4 tracking-widest border-b border-green-900 pb-2">DATA_LINK_ESTABLISHED</div>
+        <div id="mini-container" class="min-h-[180px] flex flex-col items-center justify-center"></div>
+        <div id="mini-timer" class="w-full h-1 bg-green-950 mt-6"><div id="mini-timer-fill" class="h-full bg-green-500 w-full"></div></div>
+    </div>
+</div>
+
+<!-- ADMIN -->
+<div id="admin-auth">
+    <div class="text-red-600 text-xs mb-4 uppercase">Identity Verification Required</div>
+    <input type="password" id="admin-pass-input" class="admin-field w-64 text-center" placeholder="PASSWORD">
+    <div class="flex gap-4 mt-6">
+        <button onclick="verifyAdmin()" class="menu-btn border-red-600 text-red-600 text-xs">LOGIN</button>
+        <button onclick="showScreen('main-menu')" class="menu-btn border-zinc-600 text-zinc-600 text-xs">CANCEL</button>
+    </div>
+</div>
+
+<div id="admin-panel" class="bg-zinc-950">
+    <h2 class="text-3xl text-red-600 font-bold mb-10 italic">OVERRIDE_TERMINAL</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+        <div class="space-y-8">
+            <section>
+                <div class="text-[10px] text-red-900 mb-2 uppercase">Currency Injection</div>
+                <input type="number" id="inject-val" class="admin-field w-full" placeholder="UNITS">
+                <button onclick="adminAction('inject')" class="w-full mt-2 p-3 bg-red-900 text-white text-[10px] hover:bg-red-700">COMMIT INJECTION</button>
+            </section>
+            <section><button onclick="adminAction('infinite')" id="inf-btn" class="w-full p-4 border border-red-600 text-red-600 text-xs hover:bg-red-950">SINGULARITY_CREDITS: OFF</button></section>
+        </div>
+        <div class="space-y-4">
+            <button onclick="adminAction('unlock')" class="w-full p-4 border border-red-900 text-red-900 text-xs hover:text-white hover:bg-red-900">DECRYPT_ALL_SECTORS</button>
+            <button onclick="adminAction('god')" id="god-btn" class="w-full p-4 border border-red-900 text-red-900 text-xs hover:text-white hover:bg-red-900">GHOST_MODE: OFF</button>
+            <button onclick="adminAction('reset')" class="w-full p-4 text-[9px] text-zinc-800 border border-zinc-900 mt-10">WIPE_SAVE_DATA</button>
+            <button onclick="closeAdmin()" class="w-full p-6 bg-red-600 text-black font-bold mt-10">EXIT_TERMINAL</button>
+        </div>
+    </div>
+</div>
+
+<!-- JOYSTICK UI -->
+<div id="joystick-ui" class="fixed inset-0 pointer-events-none hidden z-50">
+    <div id="joy-base" class="joystick-container pointer-events-auto">
+        <div id="joy-knob" class="joystick-knob"></div>
+    </div>
+    <div class="absolute bottom-10 right-10 flex gap-4 pointer-events-auto">
+        <button id="touch-jump" class="w-20 h-20 rounded-full border border-green-500 bg-green-900/20 text-green-500 text-xs font-bold">JUMP</button>
+    </div>
+</div>
+
+<!-- RESULT SCREEN -->
+<div id="result-screen" class="fixed inset-0 z-[2000] hidden bg-black flex flex-col items-center justify-center p-10">
+    <div id="result-title" class="text-5xl text-green-500 italic mb-4">BREACHED.</div>
+    <div id="result-stats" class="text-green-900 font-mono text-center mb-10"></div>
+    <button onclick="showScreen('main-menu')" class="menu-btn w-64">RETURN_TO_CORE</button>
+</div>
+
+<canvas id="game-canvas"></canvas>
+
+<script>
+// --- STATE & CONFIG ---
+let state = {
+    credits: 0, infiniteCredits: false, unlockedLevels: 1,
+    perks: { speed: 1, jump: 1, resistance: 1, radar: 1, hack: 1, luck: 1, stealth: 1, vision: 1, battery: 1 },
+    settings: { fov: 85, mouseSensitivity: 3, volume: 50, bloom: true, crtOverlay: true, scanlines: true, cameraLerp: 10, minimapScale: 5 }
+};
+
+const LORE_ENTRIES = Array.from({length: 50}, (_, i) => [
+    "LOG: The walls are breathing. I recorded the frequency.",
+    "LOG: Why does the code taste like copper?",
+    "LOG: Subject-7 escaped. Or rather, they let it through.",
+    "LOG: The monster has my daughter's eyes. I need to stop looking.",
+    "LOG: Every node you take deletes a year of your life outside.",
+    "LOG: There is no sun in the realization. Only the green glow.",
+    "LOG: I found a door that leads back to my own childhood bedroom.",
+    "LOG: The architects forgot to program an exit. This is a closed loop.",
+    "LOG: They call it 'Realization 0' because you realize there's zero hope.",
+    "LOG: The shadow isn't following you. It's leading you.",
+    "LOG: I can hear the server fans screaming from beneath the floor.",
+    "LOG: My reflection in the nodes is 2 seconds ahead of me.",
+    "LOG: Stay away from the grid corners. Reality is thin there.",
+    "LOG: The hunger is the first thing the matrix removes.",
+    "LOG: I've been in Cell 04 for thirty years. My watch says ten minutes.",
+    "LOG: The red eyes in the dark... they are just mirrors.",
+    "LOG: Who is typing these logs? I haven't touched a terminal in weeks.",
+    "LOG: The static is a language. I'm starting to understand.",
+    "LOG: If you see a blue light, run. Blue is not permitted here.",
+    "LOG: My skin is turning into voxels at the edges.",
+    "LOG: The monster doesn't eat. It just absorbs your data.",
+    "LOG: Don't trust the floor. It's just a projection of a floor.",
+    "LOG: I am a string of numbers. I remember being a name.",
+    "LOG: The extraction portal is a shredder. Don't go through.",
+    "LOG: Oxygen is a placebo. You don't actually need to breathe here.",
+    "LOG: The nodes are screaming. Can you hear the high pitch?",
+    "LOG: I found a node that contained my mother's voice.",
+    "LOG: The monster is crying. It can't stop hunting.",
+    "LOG: There is a level below 40. It's just a white void.",
+    "LOG: Every jump shortens the simulation's lifespan.",
+    "LOG: The credits you earn are actually souls of previous players.",
+    "LOG: I am becoming part of the environment. My legs are pillars.",
+    "LOG: The scanlines are bars of a cage.",
+    "LOG: They are watching through the CRT overlay.",
+    "LOG: If the timer hits zero, the universe restarts. We've done this before.",
+    "LOG: The architects are dead. The simulation is running on autopilot.",
+    "LOG: I found a bug. I can see the source code in the shadows.",
+    "LOG: Your 'perks' are just different types of shackles.",
+    "LOG: Stop playing. Please. It's the only way to save me.",
+    "LOG: The realization is complete. You are now data.",
+    "LOG: Welcome home, Subject Zero."
+][i] || `LOG DATA_${i}: REDACTED`);
+
+const PERK_DEFS = [
+    { id: 'speed', name: 'Neural Accelerator', desc: '+20% Velocity', base: 100 },
+    { id: 'jump', name: 'Gravitic Shunt', desc: '+15% Leap', base: 150 },
+    { id: 'resistance', name: 'Mental Barrier', desc: '-15% Panic', base: 200 },
+    { id: 'radar', name: 'Broadband Sensor', desc: '+40% Range', base: 300 },
+    { id: 'hack', name: 'Logic Bypass', desc: 'Slower Timers', base: 500 },
+    { id: 'stealth', name: 'Void Cloak', desc: '-10% Monster Range', base: 700 }
+];
+
+const MAPS = Array.from({length: 40}, (_, i) => ({ id: i + 1, name: `CELL_${(i+1).toString().padStart(2, '0')}`, difficulty: 1 + (i * 0.2), nodes: 5 + Math.floor(i / 2), reward: 200 + (i * 150) }));
+
+// --- ENGINE VARS ---
+let scene, camera, renderer, clock, player, monster, portal;
+let monsterLimbs = [];
+let walls = [], orbs = [], chunks = new Map();
+let gameActive = false, paused = false;
+let currentMap = null, collectedCount = 0;
+let keys = {}, joyVec = { x: 0, y: 0 };
+let vVel = 0, isJumping = false;
+let lStartTime = 0;
+let activeMini = null, godMode = false;
+let minimapCanvas, minimapCtx;
+
+// --- ROBLOX CAMERA VARS ---
+let cameraTheta = 0, cameraPhi = 0.5, cameraDistance = 8;
+let isRightClickDragging = false, lastPointerPos = { x: 0, y: 0 };
+
+function init() {
+    load();
+    renderSettings();
+    minimapCanvas = document.getElementById('minimap-canvas');
+    minimapCtx = minimapCanvas.getContext('2d');
+    minimapCanvas.width = 120; minimapCanvas.height = 120;
+    
+    scene = new THREE.Scene(); 
+    scene.background = new THREE.Color(0x000500); 
+    // REMOVED ALL FOG: Fog is intentionally not added here.
+
+    camera = new THREE.PerspectiveCamera(state.settings.fov, window.innerWidth / window.innerHeight, 0.1, 5000);
+    renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    clock = new THREE.Clock();
+    
+    setupInput(); setupJoystick(); updateMenuStats();
+    requestAnimationFrame(loop);
+}
+
+function renderSettings() {
+    const list = document.getElementById('settings-list');
+    list.innerHTML = '';
+    Object.keys(state.settings).forEach(key => {
+        const val = state.settings[key];
+        const wrapper = document.createElement('div');
+        wrapper.className = "p-4 border border-green-900 bg-green-950/20";
+        let control = typeof val === 'boolean' ? 
+            `<input type="checkbox" ${val ? 'checked' : ''} onchange="updateSetting('${key}', this.checked)" class="w-6 h-6 accent-green-500">` :
+            `<input type="range" min="1" max="120" value="${val}" onchange="updateSetting('${key}', parseInt(this.value))" class="w-full accent-green-500">`;
+        wrapper.innerHTML = `<div class="text-xs text-green-600 mb-2 uppercase">${key}</div>${control}`;
+        list.appendChild(wrapper);
+    });
+}
+
+function updateSetting(k, v) { state.settings[k] = v; if (k === 'fov') camera.fov = v; save(); }
+
+function setupInput() {
+    window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code === 'Space') jump(); });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+    window.addEventListener('mousedown', e => { if (e.button === 2) { isRightClickDragging = true; lastPointerPos = { x: e.clientX, y: e.clientY }; } });
+    window.addEventListener('mouseup', e => { if (e.button === 2) isRightClickDragging = false; });
+    window.addEventListener('mousemove', e => { if (isRightClickDragging) handleRotate(e.clientX, e.clientY); });
+    window.addEventListener('wheel', e => { if (gameActive) cameraDistance = Math.max(2, Math.min(25, cameraDistance + e.deltaY * 0.01)); });
+    window.addEventListener('contextmenu', e => e.preventDefault());
+
+    // Mobile camera
+    window.addEventListener('touchstart', e => {
+        if (e.touches.length === 1 && !e.target.closest('#joy-base') && !e.target.closest('button')) {
+            isRightClickDragging = true;
+            lastPointerPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+    });
+    window.addEventListener('touchmove', e => {
+        if (isRightClickDragging && e.touches.length === 1) handleRotate(e.touches[0].clientX, e.touches[0].clientY);
+    });
+    window.addEventListener('touchend', () => isRightClickDragging = false);
+}
+
+function handleRotate(currX, currY) {
+    if (!gameActive || paused) return;
+    const dx = currX - lastPointerPos.x, dy = currY - lastPointerPos.y;
+    cameraTheta -= dx * state.settings.mouseSensitivity * 0.002;
+    cameraPhi = Math.max(-1.4, Math.min(1.4, cameraPhi + dy * state.settings.mouseSensitivity * 0.002));
+    lastPointerPos = { x: currX, y: currY };
+}
+
+function jump() { if(!isJumping) { vVel = 0.45 * (1+(state.perks.jump-1)*0.15); isJumping = true; } }
+
+function loop() {
+    requestAnimationFrame(loop);
+    if(!gameActive || paused || !player) { if(renderer && scene && camera) renderer.render(scene, camera); return; }
+
+    const dt = clock.getDelta();
+    const elapsed = Date.now() - lStartTime;
+    const pad = (n) => n.toString().padStart(2, '0');
+    document.getElementById('timer-display').innerText = `${pad(Math.floor(elapsed/60000))}:${pad(Math.floor((elapsed%60000)/1000))}:${pad(Math.floor((elapsed%1000)/10))}`;
+
+    const cx = Math.floor(player.position.x / 100), cz = Math.floor(player.position.z / 100);
+    for(let x=-1; x<=1; x++) for(let z=-1; z<=1; z++) buildChunk(cx+x, cz+z);
+
+    if(isJumping) {
+        player.position.y += vVel; vVel -= 0.015;
+        if(player.position.y <= 2.0) { player.position.y = 2.0; isJumping = false; }
+    }
+
+    let mX = (keys['KeyD']?1:0)-(keys['KeyA']?1:0)+joyVec.x;
+    let mZ = (keys['KeyS']?1:0)-(keys['KeyW']?1:0)+joyVec.y;
+
+    if(mX !== 0 || mZ !== 0) {
+        const speed = 0.35 * (1 + (state.perks.speed-1)*0.2);
+        const dir = new THREE.Vector3(mX, 0, mZ).normalize().applyAxisAngle(new THREE.Vector3(0,1,0), cameraTheta);
+        let tX = player.position.clone(); tX.x += dir.x * speed; if (!collides(tX)) player.position.x = tX.x;
+        let tZ = player.position.clone(); tZ.z += dir.z * speed; if (!collides(tZ)) player.position.z = tZ.z;
+        player.rotation.y = Math.atan2(dir.x, dir.z);
+    }
+
+    const hDist = cameraDistance * Math.cos(cameraPhi), vDist = cameraDistance * Math.sin(cameraPhi);
+    camera.position.set(player.position.x + hDist * Math.sin(cameraTheta), player.position.y + 1.5 + vDist, player.position.z + hDist * Math.cos(cameraTheta));
+    camera.lookAt(player.position.x, player.position.y + 1, player.position.z);
+
+    const toP = player.position.clone().sub(monster.position); toP.y = 0;
+    const dist = toP.length();
+    monster.position.add(toP.clone().normalize().multiplyScalar(0.12 * currentMap.difficulty));
+    monster.lookAt(player.position.x, 3.5, player.position.z);
+    monsterLimbs.forEach((l, i) => { l.rotation.z = Math.sin(Date.now() * 0.005 + i) * 0.5; l.rotation.x = Math.cos(Date.now() * 0.003 + i) * 0.2; });
+
+    const pointer = document.getElementById('monster-pointer');
+    if (dist < 80) {
+        pointer.style.opacity = Math.max(0, 1 - (dist/80));
+        document.getElementById('monster-dir-hud').style.transform = `translate(-50%, -50%) rotate(${Math.atan2(toP.x, toP.z) - cameraTheta}rad)`;
+    } else pointer.style.opacity = 0;
+
+    const integrity = Math.max(0, 100 - (25/dist)*100);
+    document.getElementById('integrity-fill').style.width = integrity + '%';
+    if(dist < 5.0 && !godMode) finish(false);
+
+    for(let i=orbs.length-1; i>=0; i--) { if(player.position.distanceTo(orbs[i].position) < 5.0) { startExtraction(i); break; } }
+    if (portal && portal.visible) {
+        portal.rotation.y += 0.05;
+        if (player.position.distanceTo(portal.position) < 6) finish(true);
+    }
+
+    updateMinimap(); renderer.render(scene, camera);
+}
+
+function startExtraction(idx) {
+    paused = true;
+    const ui = document.getElementById('extraction-ui');
+    const container = document.getElementById('mini-container');
+    ui.style.display = 'flex';
+    container.innerHTML = '';
+    
+    // 50 MINIGAME VARIANTS
+    const gameId = Math.floor(Math.random() * 50);
+    activeMini = { id: gameId, idx };
+
+    if (gameId < 10) { // TYPE 1: CLICK SPAM
+        let c = 0, target = 20 + Math.floor(currentMap.difficulty * 5);
+        const b = document.createElement('button');
+        b.className = "mini-btn w-32 h-32 rounded-full font-bold text-2xl";
+        b.innerText = target;
+        b.onclick = () => { c++; b.innerText = target - c; if(c >= target) completeExtraction(); };
+        container.appendChild(b);
+    } else if (gameId < 20) { // TYPE 2: GRID TOGGLE
+        container.className = "grid grid-cols-3 gap-2";
+        const stateSet = Array.from({length: 9}, () => Math.random() > 0.5);
+        for(let i=0; i<9; i++) {
+            const t = document.createElement('div');
+            t.className = `w-12 h-12 border ${stateSet[i]?'border-green-400':'border-green-950'} cursor-pointer`;
+            t.onclick = () => { stateSet[i] = !stateSet[i]; t.style.background = stateSet[i]?"#00ff00":"transparent"; if(stateSet.every(s => s)) completeExtraction(); };
+            container.appendChild(t);
+        }
+    } else if (gameId < 30) { // TYPE 3: REACTIVE BUTTON
+        const b = document.createElement('button');
+        b.className = "mini-btn p-6"; b.innerText = "WAIT FOR GREEN";
+        const trigger = () => {
+            b.style.background = "#00ff00"; b.style.color = "#000"; b.innerText = "CLICK NOW!";
+            b.onclick = completeExtraction;
+        };
+        setTimeout(trigger, 1000 + Math.random() * 3000);
+        container.appendChild(b);
+    } else if (gameId < 40) { // TYPE 4: MATH UNLOCK
+        const n1 = Math.floor(Math.random()*50), n2 = Math.floor(Math.random()*50);
+        const ans = n1 + n2;
+        container.innerHTML = `<div class="text-green-400 mb-4">${n1} + ${n2} = ?</div>`;
+        const inp = document.createElement('input');
+        inp.className = "admin-field w-32 text-center";
+        inp.oninput = () => { if(parseInt(inp.value) === ans) completeExtraction(); };
+        container.appendChild(inp);
+        inp.focus();
+    } else { // TYPE 5: SEQUENCE BUTTONS
+        const count = 4; let current = 1;
+        for(let i=1; i<=count; i++) {
+            const b = document.createElement('button');
+            b.className = "mini-btn m-2 w-12 h-12"; b.innerText = i;
+            b.onclick = () => { if(i === current) { b.style.opacity = 0.3; current++; if(current > count) completeExtraction(); } };
+            container.appendChild(b);
+        }
+    }
+}
+
+function completeExtraction() {
+    document.getElementById('extraction-ui').style.display = 'none';
+    const o = orbs[activeMini.idx]; o.parent.remove(o); orbs.splice(activeMini.idx, 1);
+    collectedCount++; state.credits += 50;
+    document.getElementById('orb-tally').innerText = `NODES: ${collectedCount} / ${currentMap.nodes}`;
+    showLore(); paused = false; save();
+    if(collectedCount >= currentMap.nodes) spawnPortal();
+}
+
+function showLore() {
+    const toast = document.getElementById('lore-toast');
+    toast.innerText = LORE_ENTRIES[Math.floor(Math.random() * LORE_ENTRIES.length)];
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; }, 4000);
+}
+
+function buildChunk(cx, cz) {
+    const key = `${cx},${cz}`; if(chunks.has(key)) return;
+    const group = new THREE.Group();
+    const wallGeo = new THREE.BoxGeometry(10, 25, 10), wallMat = new THREE.MeshPhongMaterial({ color: 0x004400, shininess: 10 });
+    for(let i=0; i<8; i++) for(let j=0; j<8; j++) {
+        const wx = cx*100 + i*12.5, wz = cz*100 + j*12.5;
+        if(Math.abs(wx)<15 && Math.abs(wz)<15) continue;
+        const r = Math.random();
+        if(r > 0.85) { const w = new THREE.Mesh(wallGeo, wallMat); w.position.set(wx, 12.5, wz); group.add(w); walls.push(w); }
+        else if(r > 0.83) { const o = new THREE.Group(); o.add(new THREE.Mesh(new THREE.SphereGeometry(1, 8, 8), new THREE.MeshBasicMaterial({color: 0x00ff00}))); o.position.set(wx, 3, wz); group.add(o); orbs.push(o); }
+    }
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshPhongMaterial({color: 0x001100}));
+    floor.rotation.x = -Math.PI/2; floor.position.set(cx*100+37, 0, cz*100+37); group.add(floor);
+    scene.add(group); chunks.set(key, group);
+}
+
+function collides(pos) { if(godMode) return false; for(let w of walls) if(Math.abs(pos.x - w.position.x) < 7 && Math.abs(pos.z - w.position.z) < 7) return true; return false; }
+
+function updateMinimap() {
+    if(!minimapCtx || !player) return;
+    const ctx = minimapCtx, scale = state.settings.minimapScale;
+    ctx.clearRect(0, 0, 120, 120); ctx.save(); ctx.translate(60, 60); ctx.rotate(-cameraTheta);
+    ctx.fillStyle = 'rgba(0, 200, 0, 0.4)'; walls.forEach(w => {
+        const dx = (w.position.x - player.position.x) / scale, dy = (w.position.z - player.position.z) / scale;
+        if (Math.abs(dx) < 60 && Math.abs(dy) < 60) ctx.fillRect(dx-1, dy-1, 2, 2);
+    });
+    ctx.fillStyle = '#00ff00'; orbs.forEach(o => {
+        const dx = (o.position.x - player.position.x) / scale, dy = (o.position.z - player.position.z) / scale;
+        if (Math.abs(dx) < 60 && Math.abs(dy) < 60) { ctx.beginPath(); ctx.arc(dx, dy, 2, 0, Math.PI*2); ctx.fill(); }
+    });
+    ctx.restore(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(60, 55); ctx.lineTo(56, 65); ctx.lineTo(64, 65); ctx.fill();
+}
+
+function spawnPortal() {
+    document.getElementById('objective-text').innerText = "PORTAL OPENED - REACH EXTRACTION";
+    const pGeo = new THREE.TorusGeometry(4, 0.5, 16, 100), pMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
+    portal = new THREE.Mesh(pGeo, pMat); const a = Math.random() * Math.PI * 2;
+    portal.position.set(Math.cos(a)*150, 4, Math.sin(a)*150); scene.add(portal);
+}
+
+function showScreen(id) {
+    ['main-menu', 'map-menu', 'shop-menu', 'hud', 'result-screen', 'joystick-ui', 'admin-auth', 'admin-panel', 'settings-menu'].forEach(s => document.getElementById(s).style.display = 'none');
+    document.getElementById(id).style.display = (id === 'main-menu') ? 'flex' : 'block';
+    if(id === 'hud') document.getElementById('joystick-ui').style.display = 'block';
+    if(id === 'map-menu') renderMapGrid(); if(id === 'shop-menu') renderShop();
+}
+
+function renderMapGrid() {
+    const grid = document.getElementById('map-grid'); grid.innerHTML = '';
+    MAPS.forEach(m => {
+        const locked = m.id > state.unlockedLevels; const b = document.createElement('button');
+        b.className = `p-4 border border-green-900 text-left menu-btn ${locked?'opacity-20':''}`; b.disabled = locked; b.onclick = () => startMap(m);
+        b.innerHTML = `<div class="text-xs font-bold">${m.name}</div><div class="text-[9px] opacity-50">${m.nodes} NODES</div>`; grid.appendChild(b);
+    });
+}
+
+function renderShop() {
+    const c = document.getElementById('shop-items'); c.innerHTML = '';
+    PERK_DEFS.forEach(p => {
+        const lvl = state.perks[p.id], cost = Math.floor(p.base * Math.pow(2, lvl-1));
+        const item = document.createElement('div'); item.className = "flex justify-between items-center bg-green-900/10 p-4 border border-green-900";
+        item.innerHTML = `<div><div class="text-green-400 text-xs">${p.name} [v${lvl}]</div></div><button onclick="buyPerk('${p.id}', ${cost})" class="menu-btn p-2 text-[10px]">${cost} CR</button>`;
+        c.appendChild(item);
+    });
+    document.getElementById('shop-balance').innerText = `${state.credits} CR`;
+}
+
+function buyPerk(id, cost) { if(state.credits >= cost || state.infiniteCredits) { if(!state.infiniteCredits) state.credits -= cost; state.perks[id]++; save(); renderShop(); } }
+
+function startMap(m) {
+    currentMap = m; collectedCount = 0; gameActive = true; paused = false; lStartTime = Date.now();
+    chunks.forEach(c => scene.remove(c)); chunks.clear(); walls = []; orbs = [];
+    while(scene.children.length > 0) scene.remove(scene.children[0]);
+    
+    // INCREASED VISIBILITY: Brighter ambient light and removal of any fog settings.
+    scene.add(new THREE.AmbientLight(0x00ff00, 0.8));
+    
+    player = new THREE.Group(); player.position.set(0, 2, 0); scene.add(player);
+    
+    // PLAYER LIGHT: Powerful light for clear visibility.
+    const pLight = new THREE.PointLight(0x00ff00, 2, 100);
+    player.add(pLight);
+    
+    createMonster();
+    cameraTheta = 0; cameraPhi = 0.5; showScreen('hud');
+}
+
+function createMonster() {
+    monster = new THREE.Group(); monsterLimbs = [];
+    monster.add(new THREE.Mesh(new THREE.IcosahedronGeometry(3, 1), new THREE.MeshPhongMaterial({color: 0x330000})));
+    monster.add(new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000})));
+    monster.position.set(80, 5, 80); scene.add(monster);
+}
+
+function finish(win) {
+    gameActive = false; if(win) { state.credits += currentMap.reward; if(currentMap.id === state.unlockedLevels) state.unlockedLevels++; }
+    document.getElementById('result-title').innerText = win ? "BREACH_SUCCESS" : "LINK_FAILURE";
+    showScreen('result-screen'); save();
+}
+
+function openAdminAuth() { showScreen('admin-auth'); }
+function verifyAdmin() { if(document.getElementById('admin-pass-input').value === "admin") showScreen('admin-panel'); }
+function closeAdmin() { showScreen('main-menu'); }
+function adminAction(type) {
+    if(type === 'inject') state.credits += parseInt(document.getElementById('inject-val').value || 0);
+    if(type === 'unlock') state.unlockedLevels = 40;
+    if(type === 'god') godMode = !godMode;
+    if(type === 'reset') { localStorage.clear(); location.reload(); }
+    save(); updateMenuStats();
+}
+
+function setupJoystick() {
+    const base = document.getElementById('joy-base'), knob = document.getElementById('joy-knob');
+    base.addEventListener('touchstart', e => {
+        e.preventDefault(); const rect = base.getBoundingClientRect();
+        const move = (me) => {
+            const t = me.touches[0], dx = t.clientX - (rect.left + rect.width/2), dy = t.clientY - (rect.top + rect.height/2);
+            const d = Math.min(rect.width/2 - 10, Math.sqrt(dx*dx + dy*dy)), a = Math.atan2(dy, dx);
+            joyVec.x = Math.cos(a) * (d / (rect.width/2)); joyVec.y = Math.sin(a) * (d / (rect.width/2));
+            knob.style.transform = `translate(calc(-50% + ${Math.cos(a)*d}px), calc(-50% + ${Math.sin(a)*d}px))`;
+        };
+        const end = () => { joyVec = {x:0, y:0}; knob.style.transform = 'translate(-50%, -50%)'; window.removeEventListener('touchmove', move); window.removeEventListener('touchend', end); };
+        window.addEventListener('touchmove', move); window.addEventListener('touchend', end);
+    });
+    document.getElementById('touch-jump').addEventListener('touchstart', (e) => { e.preventDefault(); jump(); });
+}
+
+function save() { localStorage.setItem('never_escape_legacy', JSON.stringify(state)); updateMenuStats(); }
+function load() { const d = localStorage.getItem('never_escape_legacy'); if(d) state = JSON.parse(d); }
+function updateMenuStats() {
+    document.getElementById('menu-stats').innerText = `UNITS: ${state.credits} | PROGRESS: ${state.unlockedLevels}/40`;
+    const hc = document.getElementById('hud-credits'); if(hc) hc.innerText = state.credits.toString().padStart(6, '0');
+}
+
+window.onload = init;
+</script>
+</body>
+</html>
